@@ -6,7 +6,7 @@
 from os.path import exists
 import os
 from OpenSSL import crypto
-
+import pdb
 
 def _create_test_cert(cert_file, key_file, subject, valid_days, serial_number):
     # create a key pair
@@ -78,3 +78,52 @@ def _create_verification_cert(cert_file, key_file, verification_file, nonce, val
         verification_cert_str = crypto.dump_certificate(crypto.FILETYPE_PEM, verification_cert).decode('ascii')
 
         open(verification_file, 'w').write(verification_cert_str)
+
+
+def _create_chain_cert(chaincert_file, root_file, key_file, subject, valid_days, serial_number):
+    
+    if exists(root_file) and exists(key_file):
+        # create a key pair
+        public_key = crypto.PKey()
+        public_key.generate_key(crypto.TYPE_RSA, 2046)
+
+        
+        # open the root cert and key
+        signing_cert = crypto.load_certificate(crypto.FILETYPE_PEM, open(root_file).read())
+        #pdb.set_trace()
+        k = crypto.load_privatekey(crypto.FILETYPE_PEM, open(key_file).read())
+
+        # create a cert signed by the root
+        chain_cert = crypto.X509()
+        chain_cert.get_subject().CN = subject
+        chain_cert.gmtime_adj_notBefore(-1 * 24 * 60 * 60)
+        chain_cert.gmtime_adj_notAfter(valid_days * 24 * 60 * 60)
+        chain_cert.set_version(2)
+        chain_cert.set_serial_number(serial_number)
+
+        chain_cert.set_pubkey(public_key)
+        chain_cert.set_issuer(signing_cert.get_subject())
+        chain_cert.add_extensions([
+        crypto.X509Extension(b"basicConstraints", True, b"CA:TRUE, pathlen:1"),
+        crypto.X509Extension(b"subjectKeyIdentifier", False, b"hash",
+                             subject=chain_cert),
+        ])
+        chain_cert.add_extensions([
+            crypto.X509Extension(b"authorityKeyIdentifier", False, b"keyid:always",
+                                issuer=chain_cert)
+        ])
+            
+        chain_cert.sign(k, 'sha256')
+
+        chain_cert_str = crypto.dump_certificate(crypto.FILETYPE_PEM, chain_cert).decode('ascii')
+
+        open(chaincert_file, 'w').write(chain_cert_str)
+
+
+#_create_test_cert("root.cer", "root.pvk", "root-1" , 3, 100) 
+
+#_create_chain_cert("intermediate.cer", "root.cer", "root.pvk",  "intermediate-1" , 3, 100) 
+
+#_create_chain_cert("user.cer", "intermediate.cer", "root.pvk", "user-1" , 3, 100) 
+
+_create_verification_cert("user.cer", "root.pvk", "verify.cer", "F6317A9AB257B6244C001929E61E1266168107390689235B", 3, 100)
